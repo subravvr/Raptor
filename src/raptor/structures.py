@@ -167,7 +167,6 @@ class PathVector:
         self.L0 = width_max / 2.0
         self.L1 = np.hypot(p_max[0] - p_min[0], p_max[1] - p_min[1]) / 2.0
         self.L2 = max(height_max, depth_max)
-    
 
 
 class Grid:
