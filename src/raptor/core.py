@@ -129,6 +129,20 @@ def compute_melt_mask(
         depth_shape_factor,
     )
 
+@njit(inline="always", fastmath=True)
+def attenuation(local_time: float,
+                burn_in_time: float,
+                full_tolerance: float)-> float:
+    """
+    Calculates attenuation factor based on burn-in and tolerances.
+    """
+    burn_in_rate = -np.log(full_tolerance) / burn_in_time
+    if local_time < burn_in_time:
+        return 1 - np.exp(-burn_in_rate * local_time)
+    elif local_time > 1-burn_in_time:
+        return 1-np.exp(-burn_in_rate*(1-local_time))
+    else:
+        return 1.0
 
 @njit(parallel=True, fastmath=True)
 def compute_melt_mask_implicit(
@@ -243,6 +257,14 @@ def compute_melt_mask_implicit(
                 height += height_amplitudes[k] * np.cos(
                     two_pi_t * height_frequencies[k] + phase_k
                 )
+            attenuation_factor = attenuation(time_fraction, 
+                                            0.01, 
+                                            0.01)
+            width *= attenuation_factor
+            depth *= attenuation_factor
+            height *= attenuation_factor
+
+            # print(time_fraction,attenuation_factor)
 
             is_voxel_melted = is_inside(
                 local_y,
