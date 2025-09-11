@@ -39,6 +39,8 @@ path_vector_spec = [
     ("end_point", float64[:]),
     ("start_time", float64),
     ("end_time", float64),
+    ("burn_in_time", float64),
+    ("burn_in_rate", float64), 
     ("duration", float64),
     ("distance", float64[:]),
     ("AABB", float64[:]),
@@ -110,6 +112,9 @@ class PathVector:
         self.end_point = end_point
         self.start_time = start_time
         self.end_time = end_time
+        self.burn_in_time = 0.02
+        self.burn_in_rate = -np.log(0.01) / self.burn_in_time
+
 
     def set_coordinate_frame(self) -> None:
         self.distance = self.end_point - self.start_point

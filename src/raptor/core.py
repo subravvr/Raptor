@@ -87,6 +87,9 @@ def compute_melt_mask(
     end_points = np.array([p.end_point for p in path_vectors])
     distances = np.array([p.distance for p in path_vectors])
 
+    burn_in_times = np.array([p.burn_in_time for p in path_vectors])
+    burn_in_rates = np.array([p.burn_in_rate for p in path_vectors])
+
     e0 = np.array([p.e0 for p in path_vectors])
     e1 = np.array([p.e1 for p in path_vectors])
     e2 = np.array([p.e2 for p in path_vectors])
@@ -107,6 +110,8 @@ def compute_melt_mask(
         melt_mask,
         start_points,
         end_points,
+        burn_in_times,
+        burn_in_rates,
         e0,
         e1,
         e2,
@@ -131,11 +136,11 @@ def compute_melt_mask(
 
 
 @njit(inline="always", fastmath=True)
-def attenuation(local_time: float, burn_in_time: float, full_tolerance: float) -> float:
+def attenuation(local_time: float, burn_in_rate: float, burn_in_time: float) -> float:
     """
     Calculates attenuation factor based on burn-in and tolerances.
     """
-    burn_in_rate = -np.log(full_tolerance) / burn_in_time
+    # burn_in_rate = -np.log(full_tolerance) / burn_in_time
     if local_time < burn_in_time:
         return 1 - np.exp(-burn_in_rate * local_time)
     elif local_time > 1 - burn_in_time:
@@ -150,6 +155,8 @@ def compute_melt_mask_implicit(
     melt_mask: np.ndarray,
     start_points: np.ndarray,
     end_points: np.ndarray,
+    burn_in_times: np.ndarray,
+    burn_in_rates: np.ndarray,
     e0: np.ndarray,
     e1: np.ndarray,
     e2: np.ndarray,
@@ -257,7 +264,7 @@ def compute_melt_mask_implicit(
                 height += height_amplitudes[k] * np.cos(
                     two_pi_t * height_frequencies[k] + phase_k
                 )
-            attenuation_factor = attenuation(time_fraction, 0.01, 0.01)
+            attenuation_factor = attenuation(time_fraction, burn_in_rates[j], burn_in_times[j])
             width *= attenuation_factor
             depth *= attenuation_factor
             height *= attenuation_factor
