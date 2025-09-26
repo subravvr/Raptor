@@ -19,12 +19,13 @@ from raptor.api import (
     write_vtk,
 )
 from raptor.utilities import ScanPathBuilder
+import time
 
 # 1. Create voxel grid for the representative volume element (RVE)
 min_point = np.array([0.0, 0.0, 0.0])
 max_point = np.array([5.0e-4, 5.0e-4, 5.0e-4])
 bound_box = np.array([min_point, max_point])
-voxel_resolution = 5.0e-6
+voxel_resolution = 2.5e-6 # increased resolution to magnify the problem with runtime
 
 grid = create_grid(voxel_resolution, bound_box=bound_box)
 
@@ -78,7 +79,18 @@ melt_pool_dict = {
 melt_pool = create_melt_pool(melt_pool_dict, enable_random_phases=True)
 
 # 4. Compute porosity using conic section / superellipse curves for melt pool mask
-porosity = compute_porosity(grid, path_vectors, melt_pool, jit_warmup=True)
+N = 10 #TODO address caching of JIT-compiled functions. we are losing efficiency when looping.
+time_avg = 0
+
+for n in range(N):
+    tstart = time.time()
+    porosity = compute_porosity(grid, path_vectors, melt_pool)
+    timer = time.time() - tstart
+    time_avg += timer/N
+
+print(f'Average SVE runtime: {time_avg}')
+
+
 
 # 5. Write porosity field to .VTI
 write_vtk(grid.origin, grid.resolution, porosity, "rve.vti")

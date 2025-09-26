@@ -183,6 +183,7 @@ def compute_porosity(
     for vector in path_vectors:
         vector.set_melt_pool_properties(melt_pool)
     print(f" -> Vector preparation complete ({time.time() - t0_setup:.8f}s).")
+    
 
     print("Running melt-mask calculation...")
     t0_run = time.time()
@@ -250,7 +251,7 @@ def compute_morphology(
     minsize = 2
     filtered_defects = remove_small_objects(labeled_defects, minsize)
 
-    return measure.regionproperties_table(
+    return measure.regionprops_table(
         filtered_defects, spacing=voxel_resolution, properties=morphology_fields
     )
 
