@@ -61,6 +61,9 @@ pathvec_spec = [
     ("lx", float64),
     ("ly", float64),
     ("lz", float64),
+    ("base_W",float64),
+    ("ar_Dm",float64),
+    ("ar_Dh",float64)
 ]
 
 

@@ -214,19 +214,19 @@ def compute_porosity(
     Bmcs_np[:, 3] = tsq * t_p
 
     # compute oscillation
-    maxW = meltpool.base_W * meltpool.max_rW
-    maxDm = meltpool.base_Dm * meltpool.max_rDm
-    maxDh = meltpool.base_Dh * meltpool.max_rDh
-    minf_aabb = 0.05
-    maxW = max(maxW, meltpool.base_W * minf_aabb)
-    maxDm = max(maxDm, meltpool.base_Dm * minf_aabb)
-    maxDh = max(0.0, maxDh)  # Hump cannot be negative
-    if meltpool.base_Dh > 1e-9:
-        maxDh = max(maxDh, meltpool.base_Dh * minf_aabb)
-    else:
-        maxDh = 0.0
+    # maxW = meltpool.base_W * meltpool.max_rW
+    # maxDm = meltpool.base_Dm * meltpool.max_rDm
+    # maxDh = meltpool.base_Dh * meltpool.max_rDh
+    # minf_aabb = 0.05
+    # maxW = max(maxW, meltpool.base_W * minf_aabb)
+    # maxDm = max(maxDm, meltpool.base_Dm * minf_aabb)
+    # maxDh = max(0.0, maxDh)  # Hump cannot be negative
+    # if meltpool.base_Dh > 1e-9:
+    #     maxDh = max(maxDh, meltpool.base_Dh * minf_aabb)
+    # else:
+    #     maxDh = 0.0
 
-    max_r_xy = maxW / 2.0  # Max melt radius in XY for AABB
+    # max_r_xy = maxW / 2.0  # Max melt radius in XY for AABB
 
     for j in range(len(all_vectors)):
         dx, dy = all_vectors[j].end_coord[:2] - all_vectors[j].start_coord[:2]
@@ -237,6 +237,26 @@ def compute_porosity(
         smx, sMx = min(p0x, p1x), max(p0x, p1x)
         smy, sMy = min(p0y, p1y), max(p0y, p1y)
         smz, sMz = min(p0z, p1z), max(p0z, p1z)
+
+        meanW = all_vectors[j].base_W
+        dw = all_vectors[j].ar_Dm
+        cw = all_vectors[j].ar_Dh
+        meanD = dw * meanW
+        meanC = cw * meanW
+
+        maxW = meanW * meltpool.max_rW
+        maxDm = meanD * meltpool.max_rDm
+        maxDh = meanC * meltpool.max_rDh
+        minf_aabb = 0.05
+        maxW = max(maxW, meltpool.base_W * minf_aabb)
+        maxDm = max(maxDm, meltpool.base_Dm * minf_aabb)
+        maxDh = max(0.0, maxDh)  # Hump cannot be negative
+        if meanC > 1e-9:
+            maxDh = max(maxDh, meanC * minf_aabb)
+        else:
+            maxDh = 0.0
+        
+        max_r_xy = maxW / 2.0  # Max melt radius in XY for AABB
 
         # segment OBB
         all_vectors[j].centroid = np.array(

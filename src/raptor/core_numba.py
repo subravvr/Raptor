@@ -127,6 +127,24 @@ def point_in_poly(xt: float, yt: float, poly_v: np.ndarray) -> bool:
 
     return (is_inside_int % 2) == 1
 
+@njit(inline="always", fastmath=True)
+def point_in_lame(
+        y: float,
+        z: float,
+        width: float,
+        height: float,
+        depth: float,
+        height_shape_factor: float,
+        depth_shape_factor: float)-> bool:
+    a = width/2.0
+    b_choices = (depth,height)
+    n_choices = (depth_shape_factor,height_shape_factor)
+    selector = int(z>=0)
+    b = b_choices[selector]
+    n = n_choices[selector]
+    val = (y/a)**2 + (np.abs(z)/b)**n
+    return val <= 1.0
+
 
 def compute_melt_mask(
     vox_g: np.ndarray,
@@ -175,6 +193,10 @@ def compute_melt_mask(
     seg_lx = np.zeros(n_seg)
     seg_ly = np.zeros(n_seg)
 
+    seg_baseW = np.zeros(n_seg)
+    seg_arDm = np.zeros(n_seg)
+    seg_arDh = np.zeros(n_seg)
+
     # unpack segment properties
     for j in range(n_seg):
         vec = active_vectors[j]
@@ -190,6 +212,10 @@ def compute_melt_mask(
         seg_centroids[j, :] = vec.centroid
         seg_lx[j] = vec.lx
         seg_ly[j] = vec.ly
+
+        seg_baseW[j] = vec.base_W
+        seg_arDm[j] = vec.ar_Dm
+        seg_arDh[j] = vec.ar_Dh
 
     n_poly_pts = n_pts_b_h_g + (n_pts_b_h_g - 1)
 
@@ -213,6 +239,9 @@ def compute_melt_mask(
         seg_ly,
         Bmc_s_g,
         n_poly_pts,
+        seg_baseW,
+        seg_arDm,
+        seg_arDh,
         osc_w_amp,
         osc_w_freq,
         osc_dm_amp,
@@ -245,6 +274,9 @@ def compute_melt_mask_implicit(
     seg_ly: np.ndarray,
     Bmc_s_g: np.ndarray,
     n_poly_pts: int,
+    seg_baseW: np.ndarray,
+    seg_arDm: np.ndarray,
+    seg_arDh: np.ndarray,
     osc_w_amp: np.ndarray,
     osc_w_freq: np.ndarray,
     osc_dm_amp: np.ndarray,
@@ -316,14 +348,12 @@ def compute_melt_mask_implicit(
             phase = seg_rand_phs_g[j_s]
             two_pi_t = 2 * np.pi * t_osc
 
-            for k_n in range(phase.shape[0]):
+            for k_n in range(1,phase.shape[0]):
                 Wd += osc_w_amp[k_n] * np.cos(two_pi_t * osc_w_freq[k_n] + phase[k_n])
-                Dmd += osc_dm_amp[k_n] * np.cos(
-                    two_pi_t * osc_dm_freq[k_n] + phase[k_n]
-                )
-                Dhd += osc_dh_amp[k_n] * np.cos(
-                    two_pi_t * osc_dh_freq[k_n] + phase[k_n]
-                )
+            
+            Wd += seg_baseW[j_s]
+            Dmd = seg_arDm[j_s] * Wd
+            Dhd = seg_arDh[j_s] * Wd
 
             # 5. Final point in polygon check
             dpx = vx - (p0x + tu * sdx)
@@ -344,11 +374,11 @@ def compute_melt_mask_implicit(
                 Wd = 1e-10
                 Dhd = 1e-10
                 Dmd = 1e-10
-
-            bezier_vertices(Wd, Dhd, Dmd, n_pts_b_h_g, Bmc_s_g, poly_s)
-
-            if point_in_poly(xl, yl, poly_s):
-                is_voxel_melted = True
+            
+            is_voxel_melted = point_in_lame(
+                xl, yl, Wd, Dhd, Dmd, 2.0, 2.0
+            )
+            if is_voxel_melted:
                 break
 
         # spatter particle is solid

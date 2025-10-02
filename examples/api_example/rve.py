@@ -6,6 +6,7 @@ from raptor.api import (
     compute_porosity,
     write_vtk,
 )
+from scipy.stats import norm
 
 """
 This script is a backbone for the api usage of Raptor to generate RVE ensembles.
@@ -20,9 +21,9 @@ Loosely, the procedure can be broken down as follows:
 rvedims = np.array([1000e-6, 1000e-6, 1000e-6])  # 0.5 mm edge cube.
 power = 370  # Laser power (W)
 velocity = 1.7  # Laser velocity (m/s)
-hatch = 110e-6  # Hatch spacing (m)
-layer_thickness = 30e-6  # Layer height (m)
-rotation = 67  # Inter-layer rotation (degrees)
+hatch = 250e-6  # Hatch spacing (m)
+layer_thickness = 250e-6  # Layer height (m)
+rotation = 0  # Inter-layer rotation (degrees)
 overhang_hatch = 500e-6  # Distance from edge of RVE
 # that scanpaths are extended(m)
 additional_layers = 7  # Additional layers built past
@@ -45,6 +46,15 @@ ssb = generate_scanpaths(
 ssb.construct_vectors()
 # Downselect and compute local times
 active_vectors = ssb.process_vectors()
+dw = 0.7
+cw = 0.45
+
+widthRV = norm(loc = 207e-6, scale=28e-6)
+for vec in active_vectors:
+    baseW = widthRV.rvs()
+    vec.base_W = baseW
+    vec.ar_Dm = dw
+    vec.ar_Dh = cw 
 
 # 2. Defining melt pool from data
 mp_datapath = "../data/meltPoolData/ULI_v1700_theta0_widths.txt"
@@ -59,7 +69,7 @@ mp_data_dict = {
 }
 mp = construct_meltpool(mp_data_dict, en_rand_ph=True)
 # Compute porosity
-spatter_radius = 100e-6
+spatter_radius = 0e-6
 spatter_centroid = np.ones(3)*250e-6
 origin, porosity = compute_porosity(
     active_vectors, voxel_res, n_bezier, mp, spatter_centroid,spatter_radius,ssb.rveBoundBox

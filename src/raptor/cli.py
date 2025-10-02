@@ -163,6 +163,8 @@ def main() -> int:
         # construct melt pools
         melt_pool = construct_meltpool(melt_pool_data, en_rand_ph)
 
+        # assign melt pool mean dimensions for each vector
+
         # compute porosity
         centroid, porosity = compute_porosity(
             all_vectors,
@@ -205,6 +207,7 @@ def main() -> int:
 
 
 def run():
+
     """Entry point for the console script."""
     main()
     sys.exit()
