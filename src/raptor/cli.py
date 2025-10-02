@@ -169,6 +169,8 @@ def main() -> int:
             voxel_resolution,
             n_bezier_pts_half,
             melt_pool,
+            np.array([0,0,0]),
+            0.0,
             bounding_box,
         )
 
