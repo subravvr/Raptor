@@ -1,8 +1,12 @@
 # Ensemble example: stochastic lack-of-fusion at V = 1300 mm/s vs XCT
 
-Each Monte Carlo run simulates a set of 500 µm SVEs whose total volume matches one XCT-scanned Ti-6Al-4V coupon
-(CMU02-05-1, 295.32 mm³, giving 2362 SVEs). The script repeats this for several runs and compares defects
-larger than 20 µm with the experiment:
+Each Monte Carlo run simulates a set of 500 µm SVEs (2362 SVEs, 295.25 mm³) and compares defects larger than
+20 µm with the two XCT-scanned Ti-6Al-4V 4PB coupons built at V = 1300 mm/s:
+
+* CMU02-05-1, 295.32 mm³, compared with all 2362 SVEs of each run;
+* CMU02-32-1, 246.85 mm³, compared with the first 1974 SVEs of each run.
+
+Each comparison uses simulated coupons of the same volume as the scanned one. The quantities compared are:
 
 * **number density (ND)**: defects per mm³ in 2.5 µm equivalent-diameter bins;
 * **volume fraction (VF)**: Σ(π/6)d³ / volume of those defects, computed the same way for simulation and
@@ -41,21 +45,28 @@ to the console.
 * `data/meltPoolData/v1300_average_spectrum.csv`: width spectrum averaged over 8 gas-flow angles. Columns are
   amplitude (m) and frequency (Hz); row 0 is the mean. Source: Miner & Narra (2024),
   https://doi.org/10.1184/R1/25696293.v1.
-* `data/defectData/v1300_CMU02-05-1_eqd.csv`: XCT equivalent spherical diameters (µm) of the defects in coupon
-  CMU02-05-1. The header records the scanned volume.
+* `data/defectData/v1300_CMU02-05-1_eqd.csv` and `v1300_CMU02-32-1_eqd.csv`: XCT equivalent spherical diameters
+  (µm) of the defects in each coupon. Each header records the scanned volume.
 
 ## Expected output (20 runs)
 
 ```
+CMU02-05-1 (295.32 mm^3) vs 20 simulated coupons of 2362 SVEs (295.25 mm^3)
 quantity (> 20 um)           run mean  bootstrap 95% CI of mean    per-run 2.5-97.5%            experiment   pctl  in range
 ND total (1/mm^3)           3.556e-03  [2.202e-03, 5.080e-03]  [0.000e+00, 1.016e-02]    1.016e-02   90.0  yes
-VF (-)                      1.655e-08  [1.008e-08, 2.358e-08]  [0.000e+00, 4.779e-08]    5.856e-08  100.0  no
-defects > 20 um per run: 1.05 +/- 1.00 (experiment 3)
+VF (-)                      1.655e-08  [1.008e-08, 2.346e-08]  [0.000e+00, 4.779e-08]    5.856e-08  100.0  no
+defects > 20 um per coupon: 1.05 +/- 1.00 (experiment 3)
+
+CMU02-32-1 (246.85 mm^3) vs 20 simulated coupons of 1974 SVEs (246.75 mm^3)
+quantity (> 20 um)           run mean  bootstrap 95% CI of mean    per-run 2.5-97.5%            experiment   pctl  in range
+ND total (1/mm^3)           3.647e-03  [2.026e-03, 5.274e-03]  [0.000e+00, 1.023e-02]    2.431e-02  100.0  no
+VF (-)                      1.697e-08  [9.397e-09, 2.520e-08]  [0.000e+00, 5.068e-08]    1.632e-07  100.0  no
+defects > 20 um per coupon: 0.90 +/- 0.97 (experiment 6)
 ```
 
-* **Number density.** The coupon's 3 defects > 20 µm sit at the 90th percentile of the per-run distribution
-  (1.05 ± 1.00 defects per simulated coupon), inside its 2.5–97.5% range. The experiment is consistent with the
-  ensemble, near its upper tail.
-* **Volume fraction.** The experiment lies above every simulated run. All simulated defects > 20 µm are smaller
-  than 22.5 µm, while the coupon contains one 24.2 µm defect, and the d³ weighting makes that single defect
-  dominate. With 3 experimental defects, this rests on one large outlier.
+* **CMU02-05-1.** The number density is consistent with the ensemble: 3 defects > 20 µm sits at the 90th
+  percentile of simulated coupons (1.05 ± 1.00 defects). The volume fraction lies above every run, driven by a
+  single 24.2 µm defect; all simulated defects > 20 µm are smaller than 22.5 µm.
+* **CMU02-32-1.** Both quantities lie above every simulated coupon of the same volume: 6 defects > 20 µm against
+  0.90 ± 0.97, including a 29.6 µm defect. ND is about 7× the ensemble mean and VF about 10×. With these settings,
+  the model underpredicts the large-defect tail of this coupon at λ = 1.04.

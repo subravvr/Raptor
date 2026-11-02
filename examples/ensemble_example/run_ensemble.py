@@ -45,7 +45,19 @@ from raptor.io import read_data  # noqa: E402
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / ".." / "data"
 SPECTRUM_FILE = DATA_DIR / "meltPoolData" / "v1300_average_spectrum.csv"
-DEFECT_FILE = DATA_DIR / "defectData" / "v1300_CMU02-05-1_eqd.csv"
+# XCT-scanned coupons at V = 1300 mm/s (marker, line style in the figure).
+COUPONS = {
+    "CMU02-05-1": (
+        DATA_DIR / "defectData" / "v1300_CMU02-05-1_eqd.csv",
+        "x",
+        "-",
+    ),
+    "CMU02-32-1": (
+        DATA_DIR / "defectData" / "v1300_CMU02-32-1_eqd.csv",
+        "D",
+        "--",
+    ),
+}
 
 # Process parameters of the coupon (V = 1300 mm/s).
 POWER = 370.0  # W
@@ -129,9 +141,9 @@ def build_model():
 
 def simulate(n_mc, n_sve, output):
     melt_pool, path_vectors, grid = build_model()
-    eqds, counts = [], []
+    eqds, sves, counts = [], [], []
     for run in range(n_mc):
-        run_eqds = []
+        run_eqds, run_sves = [], []
         for sve in range(n_sve):
             with contextlib.redirect_stdout(io.StringIO()):
                 phase = compute_porosity(
@@ -145,8 +157,10 @@ def simulate(n_mc, n_sve, output):
                     phase, VOXEL_RESOLUTION, ["equivalent_diameter_area"]
                 )
             run_eqds.append(pores["equivalent_diameter_area"] * 1.0e6)
+            run_sves.append(np.full(run_eqds[-1].size, sve, dtype=np.int32))
         run_eqds = np.concatenate(run_eqds)
         eqds.append(run_eqds)
+        sves.append(np.concatenate(run_sves))
         counts.append(run_eqds.size)
         n_large = int((run_eqds > THRESHOLD_UM).sum())
         print(
@@ -156,6 +170,7 @@ def simulate(n_mc, n_sve, output):
     np.savez(
         output,
         eqd_um=np.concatenate(eqds),
+        sve_index=np.concatenate(sves),
         pores_per_run=np.array(counts),
         n_sve=n_sve,
         sve_volume_mm3=(SVE_EDGE * 1.0e3) ** 3,
@@ -195,21 +210,19 @@ def analyze(results_path, figure_path):
     results = np.load(results_path)
     splits = np.cumsum(results["pores_per_run"])[:-1]
     runs = np.split(results["eqd_um"], splits)
-    run_volume = float(results["n_sve"] * results["sve_volume_mm3"])
-
-    exp_eqd = read_data(DEFECT_FILE)
-    exp_volume = read_scanned_volume(DEFECT_FILE)
-    exp_nd = number_density(exp_eqd, exp_volume)
-    exp_vf = volume_fraction(exp_eqd, exp_volume)
-    exp_total = exp_nd.sum()
-
-    nd = np.array([number_density(r, run_volume) for r in runs])
-    vf = np.array([volume_fraction(r, run_volume) for r in runs])
-    total = nd.sum(axis=1)
+    run_sves = np.split(results["sve_index"], splits)
+    n_sve = int(results["n_sve"])
+    sve_volume = float(results["sve_volume_mm3"])
     rng = np.random.default_rng(2024)
-    nd_mean, nd_ci = bootstrap_mean(nd, rng)
-    total_mean, total_ci = bootstrap_mean(total, rng)
-    vf_mean, vf_ci = bootstrap_mean(vf, rng)
+
+    def ensemble(n_used):
+        """Per-run ND and VF over the first n_used SVEs of every run."""
+        volume = n_used * sve_volume
+        subsets = [r[s < n_used] for r, s in zip(runs, run_sves)]
+        nd = np.array([number_density(r, volume) for r in subsets])
+        vf = np.array([volume_fraction(r, volume) for r in subsets])
+        counts = np.array([(r > THRESHOLD_UM).sum() for r in subsets])
+        return volume, nd, vf, counts
 
     def row(name, mean, ci, per_run, exp):
         lo, hi = np.percentile(per_run, [2.5, 97.5])
@@ -220,29 +233,51 @@ def analyze(results_path, figure_path):
             f"  {percentile_of(exp, per_run):5.1f}  {'yes' if inside else 'no'}"
         )
 
-    print(
-        f"\nV = 1300 mm/s, lambda = {INFLATION}: {len(runs)} runs x "
-        f"{int(results['n_sve'])} SVEs ({run_volume:.2f} mm^3 per run); "
-        f"experiment {exp_volume:.2f} mm^3"
-    )
-    print(
-        f"{'quantity (> 20 um)':<26}{'run mean':>11}  "
-        f"{'bootstrap 95% CI of mean':<26}  {'per-run 2.5-97.5%':<26}"
-        f"  {'experiment':>11}  {'pctl':>5}  in range"
-    )
-    row("ND total (1/mm^3)", total_mean, total_ci, total, exp_total)
-    row("VF (-)", vf_mean, vf_ci, vf, exp_vf)
-    counts = np.array([(r > THRESHOLD_UM).sum() for r in runs])
-    print(
-        f"defects > 20 um per run: {counts.mean():.2f} +/- "
-        f"{counts.std(ddof=1) if counts.size > 1 else 0.0:.2f} "
-        f"(experiment {int((exp_eqd > THRESHOLD_UM).sum())})"
-    )
+    experiments = []
+    for coupon, (path, marker, style) in COUPONS.items():
+        exp_eqd = read_data(path)
+        exp_volume = read_scanned_volume(path)
+        exp_nd = number_density(exp_eqd, exp_volume)
+        exp_vf = volume_fraction(exp_eqd, exp_volume)
+        experiments.append((coupon, exp_nd, exp_vf, marker, style))
 
-    plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, figure_path)
+        # Simulated coupons of the same volume as this one.
+        n_used = min(n_sve, int(exp_volume / sve_volume))
+        volume, nd, vf, counts = ensemble(n_used)
+        total_mean, total_ci = bootstrap_mean(nd.sum(axis=1), rng)
+        vf_mean, vf_ci = bootstrap_mean(vf, rng)
+        print(
+            f"\n{coupon} ({exp_volume:.2f} mm^3) vs {len(runs)} simulated "
+            f"coupons of {n_used} SVEs ({volume:.2f} mm^3), "
+            f"V = 1300 mm/s, lambda = {INFLATION}"
+        )
+        print(
+            f"{'quantity (> 20 um)':<26}{'run mean':>11}  "
+            f"{'bootstrap 95% CI of mean':<26}  {'per-run 2.5-97.5%':<26}"
+            f"  {'experiment':>11}  {'pctl':>5}  in range"
+        )
+        row(
+            "ND total (1/mm^3)",
+            total_mean,
+            total_ci,
+            nd.sum(axis=1),
+            exp_nd.sum(),
+        )
+        row("VF (-)", vf_mean, vf_ci, vf, exp_vf)
+        print(
+            f"defects > 20 um per coupon: {counts.mean():.2f} +/- "
+            f"{counts.std(ddof=1) if counts.size > 1 else 0.0:.2f} "
+            f"(experiment {int((exp_eqd > THRESHOLD_UM).sum())})"
+        )
+
+    # The figure shows the full-length runs; ND and VF are per unit volume.
+    _, nd, vf, _ = ensemble(n_sve)
+    nd_mean, nd_ci = bootstrap_mean(nd, rng)
+    vf_mean, vf_ci = bootstrap_mean(vf, rng)
+    plot(nd, nd_mean, nd_ci, vf, vf_mean, vf_ci, experiments, figure_path)
 
 
-def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
+def plot(nd, nd_mean, nd_ci, vf, vf_mean, vf_ci, experiments, path):
     fig, (ax_nd, ax_vf) = plt.subplots(
         1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1.6, 1]}
     )
@@ -255,7 +290,7 @@ def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
     nd_floor = 1.0e-4
     rng = np.random.default_rng(1)
 
-    run_x = centers + rng.uniform(-0.6, 0.6, nd[:, keep].shape) - 0.3
+    run_x = centers + rng.uniform(-0.95, 0.05, nd[:, keep].shape)
     run_nd = nd[:, keep]
     zero = run_nd <= 0
     ax_nd.scatter(
@@ -282,7 +317,7 @@ def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
     lower, upper = nd_ci[0][keep], nd_ci[1][keep]
     shown = mean > 0
     ax_nd.errorbar(
-        centers[shown] + 0.7,
+        centers[shown] + 0.35,
         mean[shown],
         yerr=[
             mean[shown] - np.maximum(lower[shown], nd_floor),
@@ -295,25 +330,31 @@ def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
         label="Ensemble mean, bootstrap 95% CI",
     )
 
-    exp = exp_nd[keep]
-    ax_nd.scatter(
-        centers[exp > 0] + 0.7,
-        exp[exp > 0],
-        s=70,
-        marker="x",
-        linewidths=2,
-        color=EXP_COLOR,
-        label="Experiment (XCT)",
-    )
-    ax_nd.scatter(
-        centers[exp <= 0] + 0.7,
-        np.full(int((exp <= 0).sum()), nd_floor),
-        s=40,
-        marker="v",
-        color=EXP_COLOR,
-        clip_on=False,
-        label="Experiment, zero count (capped)",
-    )
+    for k, (coupon, exp_nd, _, marker, _) in enumerate(experiments):
+        exp = exp_nd[keep]
+        x = centers + 0.7 + 0.3 * k
+        ax_nd.scatter(
+            x[exp > 0],
+            exp[exp > 0],
+            s=60 if marker == "x" else 34,
+            marker=marker,
+            linewidths=2 if marker == "x" else 1.2,
+            **(
+                {"color": EXP_COLOR}
+                if marker == "x"
+                else {"facecolor": "none", "edgecolor": EXP_COLOR}
+            ),
+            label=f"Experiment {coupon}",
+        )
+        ax_nd.scatter(
+            x[exp <= 0],
+            np.full(int((exp <= 0).sum()), nd_floor),
+            s=40,
+            marker="v",
+            color=EXP_COLOR,
+            clip_on=False,
+            label="Experiment, zero count (capped)" if k == 0 else None,
+        )
     ax_nd.set_yscale("log")
     ax_nd.set_ylim(nd_floor, 3.0e-2)
     ax_nd.set_xlim(THRESHOLD_UM, 30.0)
@@ -366,7 +407,14 @@ def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
         capsize=5,
         label="Ensemble mean, bootstrap 95% CI",
     )
-    ax_vf.axhline(exp_vf * 100, color=EXP_COLOR, lw=1.6, label="Experiment")
+    for coupon, _, exp_vf, _, style in experiments:
+        ax_vf.axhline(
+            exp_vf * 100,
+            color=EXP_COLOR,
+            lw=1.6,
+            ls=style,
+            label=f"Experiment {coupon}",
+        )
     ax_vf.set_yscale("log")
     ax_vf.set_ylim(vf_floor, vf_top)
     ax_vf.set_xlim(-0.4, 0.6)
@@ -401,7 +449,7 @@ def main():
         "--n-sve",
         type=int,
         default=None,
-        help="SVEs per run (default: scanned XCT volume / SVE volume)",
+        help="SVEs per run (default: largest scanned volume / SVE volume)",
     )
     parser.add_argument(
         "--plot-only",
@@ -412,8 +460,9 @@ def main():
 
     results_path = SCRIPT_DIR / "ensemble_results.npz"
     if not args.plot_only:
-        n_sve = args.n_sve or int(
-            read_scanned_volume(DEFECT_FILE) / (SVE_EDGE * 1.0e3) ** 3
+        n_sve = args.n_sve or max(
+            int(read_scanned_volume(path) / (SVE_EDGE * 1.0e3) ** 3)
+            for path, _, _ in COUPONS.values()
         )
         simulate(args.n_mc, n_sve, results_path)
     analyze(results_path, SCRIPT_DIR / "ensemble_v1300.png")
