@@ -247,50 +247,87 @@ def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
         1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1.6, 1]}
     )
 
-    # Number density as step histograms over the 2.5 um bins above the
-    # threshold. Empty bins are left blank on the log axis.
-    keep = EQD_BINS[:-1] >= THRESHOLD_UM
-    edges = EQD_BINS[np.r_[keep, False] | np.r_[False, keep]]
-
-    def blank_zeros(values):
-        values = np.asarray(values, dtype=np.float64)[keep]
-        return np.where(values > 0, values, np.nan)
-
-    for i, run_nd in enumerate(nd):
-        ax_nd.stairs(
-            blank_zeros(run_nd),
-            edges,
-            color=SIM_COLOR,
-            alpha=0.25,
-            lw=1.0,
-            label="Simulation, one step line per run" if i == 0 else None,
-        )
+    # Number density per 2.5 um bin above the threshold. Zero counts cannot
+    # be shown on the log axis; they are capped at the lower edge and drawn
+    # as downward triangles. Per-run markers are jittered within each bin.
+    keep = (EQD_BINS[:-1] >= THRESHOLD_UM) & (EQD_BINS[1:] <= 30.0)
+    centers = (EQD_BINS[:-1] + np.diff(EQD_BINS) / 2.0)[keep]
     nd_floor = 1.0e-4
-    ax_nd.stairs(
-        blank_zeros(nd_ci[1]),
-        edges,
-        baseline=np.maximum(nd_ci[0][keep], nd_floor),
-        fill=True,
+    rng = np.random.default_rng(1)
+
+    run_x = centers + rng.uniform(-0.6, 0.6, nd[:, keep].shape) - 0.3
+    run_nd = nd[:, keep]
+    zero = run_nd <= 0
+    ax_nd.scatter(
+        run_x[~zero],
+        run_nd[~zero],
+        s=22,
+        facecolor="none",
+        edgecolor=SIM_COLOR,
+        alpha=0.6,
+        label="Simulation, one marker per run and bin",
+    )
+    ax_nd.scatter(
+        run_x[zero],
+        np.full(int(zero.sum()), nd_floor),
+        s=26,
+        marker="v",
         color=SIM_COLOR,
-        alpha=0.2,
+        alpha=0.35,
+        clip_on=False,
+        label="Simulation, zero count (capped)",
+    )
+
+    mean = nd_mean[keep]
+    lower, upper = nd_ci[0][keep], nd_ci[1][keep]
+    shown = mean > 0
+    ax_nd.errorbar(
+        centers[shown] + 0.7,
+        mean[shown],
+        yerr=[
+            mean[shown] - np.maximum(lower[shown], nd_floor),
+            upper[shown] - mean[shown],
+        ],
+        fmt="s",
+        ms=6,
+        color=SIM_COLOR,
+        capsize=4,
         label="Ensemble mean, bootstrap 95% CI",
     )
-    ax_nd.stairs(blank_zeros(nd_mean), edges, color=SIM_COLOR, lw=2.2)
-    ax_nd.stairs(
-        blank_zeros(exp_nd),
-        edges,
+
+    exp = exp_nd[keep]
+    ax_nd.scatter(
+        centers[exp > 0] + 0.7,
+        exp[exp > 0],
+        s=70,
+        marker="x",
+        linewidths=2,
         color=EXP_COLOR,
-        lw=2.2,
         label="Experiment (XCT)",
+    )
+    ax_nd.scatter(
+        centers[exp <= 0] + 0.7,
+        np.full(int((exp <= 0).sum()), nd_floor),
+        s=40,
+        marker="v",
+        color=EXP_COLOR,
+        clip_on=False,
+        label="Experiment, zero count (capped)",
     )
     ax_nd.set_yscale("log")
     ax_nd.set_ylim(nd_floor, 3.0e-2)
     ax_nd.set_xlim(THRESHOLD_UM, 30.0)
-    ax_nd.set_xticks(edges[edges <= 30.0])
+    ax_nd.set_xticks(np.arange(THRESHOLD_UM, 30.01, 2.5))
     ax_nd.set_xlabel("Defect equivalent diameter (µm), 2.5 µm bins")
     ax_nd.set_ylabel("Number density (1/mm$^3$ per bin)")
     ax_nd.set_title("Number density, defects > 20 µm")
-    ax_nd.legend(frameon=False, fontsize=8, loc="upper right")
+    ax_nd.legend(
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.16),
+        ncol=2,
+    )
 
     # Volume fraction in percent on a log axis. Runs without a defect above
     # the threshold have zero volume fraction and are drawn on the lower edge.
