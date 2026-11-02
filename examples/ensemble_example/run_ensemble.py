@@ -243,81 +243,98 @@ def analyze(results_path, figure_path):
 
 
 def plot(nd, nd_mean, nd_ci, exp_nd, vf, vf_mean, vf_ci, exp_vf, path):
-    centers = EQD_BINS[:-1] + np.diff(EQD_BINS) / 2.0
     fig, (ax_nd, ax_vf) = plt.subplots(
         1, 2, figsize=(10, 4.2), gridspec_kw={"width_ratios": [1.6, 1]}
     )
 
+    # Number density as step histograms over the 2.5 um bins above the
+    # threshold. Empty bins are left blank on the log axis.
+    keep = EQD_BINS[:-1] >= THRESHOLD_UM
+    edges = EQD_BINS[np.r_[keep, False] | np.r_[False, keep]]
+
+    def blank_zeros(values):
+        values = np.asarray(values, dtype=np.float64)[keep]
+        return np.where(values > 0, values, np.nan)
+
     for i, run_nd in enumerate(nd):
-        shown = run_nd > 0
-        ax_nd.plot(
-            centers[shown],
-            run_nd[shown],
-            "o",
-            ms=4,
-            mfc="none",
+        ax_nd.stairs(
+            blank_zeros(run_nd),
+            edges,
             color=SIM_COLOR,
-            alpha=0.35,
-            label="Simulation, one marker per run and bin" if i == 0 else None,
+            alpha=0.25,
+            lw=1.0,
+            label="Simulation, one step line per run" if i == 0 else None,
         )
-    shown = nd_mean > 0
-    floor = 1.0e-4
-    # Ensemble mean per bin with its bootstrap 95% CI, offset slightly so the
-    # per-run markers stay visible.
-    lower = np.maximum(nd_ci[0][shown], floor)
-    ax_nd.errorbar(
-        centers[shown] + 0.5,
-        nd_mean[shown],
-        yerr=[nd_mean[shown] - lower, nd_ci[1][shown] - nd_mean[shown]],
-        fmt="s",
-        ms=6,
+    nd_floor = 1.0e-4
+    ax_nd.stairs(
+        blank_zeros(nd_ci[1]),
+        edges,
+        baseline=np.maximum(nd_ci[0][keep], nd_floor),
+        fill=True,
         color=SIM_COLOR,
-        capsize=4,
+        alpha=0.2,
         label="Ensemble mean, bootstrap 95% CI",
     )
-    shown = exp_nd > 0
-    ax_nd.plot(
-        centers[shown],
-        exp_nd[shown],
-        "x",
-        ms=9,
-        mew=2,
+    ax_nd.stairs(blank_zeros(nd_mean), edges, color=SIM_COLOR, lw=2.2)
+    ax_nd.stairs(
+        blank_zeros(exp_nd),
+        edges,
         color=EXP_COLOR,
+        lw=2.2,
         label="Experiment (XCT)",
     )
     ax_nd.set_yscale("log")
-    ax_nd.set_ylim(bottom=floor)
-    ax_nd.set_xlim(THRESHOLD_UM - 1.0, 30.0)
-    ax_nd.set_xlabel("Defect equivalent diameter (µm)")
-    ax_nd.set_ylabel("Number density (1/mm$^3$ per 2.5 µm bin)")
+    ax_nd.set_ylim(nd_floor, 3.0e-2)
+    ax_nd.set_xlim(THRESHOLD_UM, 30.0)
+    ax_nd.set_xticks(edges[edges <= 30.0])
+    ax_nd.set_xlabel("Defect equivalent diameter (µm), 2.5 µm bins")
+    ax_nd.set_ylabel("Number density (1/mm$^3$ per bin)")
     ax_nd.set_title("Number density, defects > 20 µm")
     ax_nd.legend(frameon=False, fontsize=8, loc="upper right")
 
-    scale = 100 * 1.0e6  # fraction -> units of 1e-6 %
+    # Volume fraction in percent on a log axis. Runs without a defect above
+    # the threshold have zero volume fraction and are drawn on the lower edge.
+    vf_floor, vf_top = 1.0e-7, 1.0e-4
+    vf_pct = vf * 100
     rng = np.random.default_rng(0)
+    jitter = rng.uniform(-0.12, 0.12, vf.size)
+    nonzero = vf_pct > 0
     ax_vf.scatter(
-        rng.uniform(-0.12, 0.12, vf.size),
-        vf * scale,
+        jitter[nonzero],
+        vf_pct[nonzero],
         s=28,
         facecolor="none",
         edgecolor=SIM_COLOR,
-        alpha=0.6,
+        alpha=0.7,
         label="Simulation, one marker per run",
     )
+    n_zero = int((~nonzero).sum())
+    if n_zero:
+        ax_vf.scatter(
+            jitter[~nonzero],
+            np.full(n_zero, vf_floor),
+            s=36,
+            marker="v",
+            color=SIM_COLOR,
+            alpha=0.7,
+            clip_on=False,
+            label=f"Runs with no defect > 20 µm ({n_zero})",
+        )
     ax_vf.errorbar(
         [0.35],
-        [vf_mean * scale],
-        yerr=[[(vf_mean - vf_ci[0]) * scale], [(vf_ci[1] - vf_mean) * scale]],
+        [vf_mean * 100],
+        yerr=[[(vf_mean - vf_ci[0]) * 100], [(vf_ci[1] - vf_mean) * 100]],
         fmt="s",
         color=SIM_COLOR,
         capsize=5,
         label="Ensemble mean, bootstrap 95% CI",
     )
-    ax_vf.axhline(exp_vf * scale, color=EXP_COLOR, lw=1.6, label="Experiment")
+    ax_vf.axhline(exp_vf * 100, color=EXP_COLOR, lw=1.6, label="Experiment")
+    ax_vf.set_yscale("log")
+    ax_vf.set_ylim(vf_floor, vf_top)
     ax_vf.set_xlim(-0.4, 0.6)
     ax_vf.set_xticks([])
-    ax_vf.set_ylim(bottom=0, top=max(vf.max(), exp_vf) * scale * 1.15)
-    ax_vf.set_ylabel("Volume fraction (10$^{-6}$ %)")
+    ax_vf.set_ylabel("Volume fraction (%)")
     ax_vf.set_title("Volume fraction, defects > 20 µm")
     ax_vf.legend(
         frameon=False,
