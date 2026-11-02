@@ -133,6 +133,7 @@ parameters:
   spectral_error_fraction: 0.25
   memory_limit_mb: null
   powder_consolidation: 0.5 # Optional (default 0.5), in (0, 1]; effective layer thickness = layer_height / phi
+  boundary_tracking: true   # false writes only 0 (pore) and 1 (melted)
 
 # Melt pool dimension data: every dimension uses 'time_series' (time, value)
 # data, or every dimension uses 'spectral_components' (see below).
@@ -359,6 +360,7 @@ porosity = compute_porosity(
     tile_width=None,
     spectral_error_fraction=0.25,
     memory_limit_mb=None,
+    boundary_tracking=True,
 )
 ```
 
@@ -371,6 +373,10 @@ The optional controls have the following behavior:
 * `memory_limit_mb=None` checks `RAPTOR_MEMORY_LIMIT_MB` and otherwise uses
   80% of currently available process memory. An explicit value is a shared
   per-process budget; it is not divided by the Numba thread count.
+* `boundary_tracking=True` labels voxels within one voxel of a melt-pool
+  surface as boundary (`2`) or boundary intersection (`3`). With `False`, only
+  `0` (never melted) and `1` (melted) are written, so every unmelted voxel
+  counts as a pore.
 
 When the full spectral table fits, Raptor uses resident execution. Under a
 smaller memory budget, it streams ordered vector batches without changing the
@@ -380,7 +386,8 @@ spectral sampling or requested accuracy.
 Use the `write_vtk` helper function to save the resulting porosity NumPy array
 to a `.vti` file for visualization in tools like ParaView. The `Phase` array
 uses `0` for unmelted pore voxels, `1` for melted interior voxels, `2` for melt
-pool boundary voxels, and `3` for boundary intersections. ParaView can isolate
+pool boundary voxels, and `3` for boundary intersections (`2` and `3` only
+with `boundary_tracking=True`). ParaView can isolate
 the defects within the RVE by thresholding the `Phase` array around `0`.
 
 ```python
